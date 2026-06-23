@@ -1,9 +1,11 @@
-# ai_service.py
+
 import cv2
 import numpy as np
 import time
 from ultralytics import YOLO
 from config.config import Config
+from tracker import Tracker
+from plate_reader import PlateReader
 
 try:
     import mediapipe as mp
@@ -18,19 +20,24 @@ class AIService:
 
         # Hafif model
         self.light_model = YOLO(self.cfg.LIGHT_MODEL)
-        print("✅ YOLOv8n yüklendi!")
+        print(" YOLOv8n yüklendi!")
 
         # Ağır model
         self.heavy_model = YOLO(self.cfg.HEAVY_MODEL)
-        print("✅ RT-DETR yüklendi!")
+        print(" RT-DETR yüklendi!")
 
         # Fine-tuned davranış modeli
         try:
             self.behavior_model = YOLO("runs/classify/models/driver_behavior/weights/best.pt")
-            print("✅ Sürücü davranış modeli yüklendi!")
+            print("Sürücü davranış modeli yüklendi!")
         except Exception as e:
-            print(f"❌ Behavior model yüklenemedi: {e}")
+            print(f" Behavior model yüklenemedi: {e}")
             self.behavior_model = None
+
+        # Tracker ve plaka okuma
+        self.tracker      = Tracker()
+        self.plate_reader = PlateReader()
+        self.detected_plates = {}  # track_id → plaka
 
         # MediaPipe
         self.face_landmarker = None
@@ -43,7 +50,7 @@ class AIService:
                 import urllib.request, os
                 model_path = "models/face_landmarker.task"
                 if not os.path.exists(model_path):
-                    print("📥 Face landmarker indiriliyor...")
+                    print(" Face landmarker indiriliyor...")
                     urllib.request.urlretrieve(
                         "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
                         model_path
@@ -56,14 +63,14 @@ class AIService:
                     min_tracking_confidence=0.5
                 )
                 self.face_landmarker = mp.tasks.vision.FaceLandmarker.create_from_options(options)
-                print("✅ Face landmarker yüklendi!")
+                print(" Face landmarker yüklendi!")
             except Exception as e:
                 print(f"⚠️ Face landmarker: {e}")
 
             try:
                 model_path = "models/hand_landmarker.task"
                 if not os.path.exists(model_path):
-                    print("📥 Hand landmarker indiriliyor...")
+                    print(" Hand landmarker indiriliyor...")
                     urllib.request.urlretrieve(
                         "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
                         model_path
@@ -76,15 +83,15 @@ class AIService:
                     min_tracking_confidence=0.5
                 )
                 self.hand_landmarker = mp.tasks.vision.HandLandmarker.create_from_options(options)
-                print("✅ Hand landmarker yüklendi!")
+                print(" Hand landmarker yüklendi!")
             except Exception as e:
                 print(f"⚠️ Hand landmarker: {e}")
 
-        # Göz landmark indeksleri
+        
         self.LEFT_EYE  = [362, 385, 387, 263, 373, 380]
         self.RIGHT_EYE = [33, 160, 158, 133, 153, 144]
 
-        # Sayaçlar
+       
         self.ear_counter = 0
         self.drowsy = False
         self.phone_last_detected = 0
@@ -94,15 +101,18 @@ class AIService:
 
     def run_light(self, frame):
         signals = {
-            "vehicle_detected":  False,
-            "vehicle_proximity": 0.0,
-            "phone_detected":    False,
-            "hand_on_wheel":     True,
-            "ear_value":         1.0,
-            "drowsy":            False,
-            "behavior":          "unknown",
-            "behavior_conf":     0.0,
-            "detections":        []
+            "vehicle_detected":   False,
+            "vehicle_proximity":  0.0,
+            "phone_detected":     False,
+            "hand_on_wheel":      True,
+            "ear_value":          1.0,
+            "drowsy":             False,
+            "behavior":           "unknown",
+            "behavior_conf":      0.0,
+            "plates":             [],
+            "tracks":             [],
+            "tracker_stable":     False,
+            "detections":         []
         }
 
         if frame is None:
@@ -110,7 +120,6 @@ class AIService:
 
         h, w = frame.shape[:2]
 
-        # YOLOv8n tespiti
         results = self.light_model(
             frame,
             conf=self.cfg.VEHICLE_CONF,
@@ -143,7 +152,7 @@ class AIService:
                     "bbox":  [x1, y1, x2, y2]
                 })
 
-        # Fine-tuned davranış modeli
+        
         if self.behavior_model is not None:
             try:
                 beh_result = self.behavior_model(
@@ -167,7 +176,7 @@ class AIService:
             except Exception as e:
                 print(f"⚠️ Behavior model hatası: {e}")
 
-        # MediaPipe yüz — EAR
+        
         if self.face_landmarker:
             try:
                 rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -192,7 +201,7 @@ class AIService:
             except:
                 pass
 
-        # MediaPipe el
+        
         if self.hand_landmarker:
             try:
                 rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -205,6 +214,20 @@ class AIService:
                     signals["hand_on_wheel"] = False
             except:
                 pass
+
+        
+        if signals["detections"]:
+            tracks, is_stable = self.tracker.update(signals["detections"], frame)
+            signals["tracks"]         = tracks
+            signals["tracker_stable"] = is_stable
+
+            
+            for det in signals["detections"]:
+                if det["class"] in self.cfg.VEHICLE_CLASSES and det["conf"] > 0.6:
+                    plate = self.plate_reader.read_plate(frame, det["bbox"])
+                    if plate:
+                        signals["plates"].append(plate)
+                        print(f"🚗 Plaka: {plate}")
 
         return signals
 
