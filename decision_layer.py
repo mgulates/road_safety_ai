@@ -19,7 +19,7 @@ class DecisionLayer:
         if len(self.temporal_buffer) > self.BUFFER_SIZE:
             self.temporal_buffer.pop(0)
 
-        avg_score = sum(self.temporal_buffer) / len(self.temporal_buffer)
+        avg_score = max(self.temporal_buffer)
 
         if avg_score < self.cfg.T1:
             return {

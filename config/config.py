@@ -9,9 +9,8 @@ class Config:
     IMG_SIZE = 640
     
     # Risk eşikleri
-    T1 = 0.50
-    T2 = 0.75
-    
+    T1 = 0.40   
+    T2 = 0.55   
     # EAR (göz kırpma) eşiği
     EAR_THRESHOLD = 0.25
     EAR_CONSEC_FRAMES = 20
