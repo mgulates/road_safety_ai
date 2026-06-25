@@ -1,4 +1,4 @@
-# test_plate.py
+
 import cv2
 from plate_reader import PlateReader
 from ultralytics import YOLO
@@ -23,4 +23,4 @@ for box in boxes:
         print(f"🔍 Plaka bbox tespit: {plate_bbox}")
 
         plate = reader.read_plate(frame, [x1, y1, x2, y2])
-        print(f"🚗 Araç ({conf:.2f}) → Plaka: {plate}")
+        print(f" Araç ({conf:.2f}) → Plaka: {plate}")
