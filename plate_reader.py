@@ -1,4 +1,3 @@
-# plate_reader.py
 import cv2
 import re
 import os
@@ -6,8 +5,8 @@ from ultralytics import YOLO
 
 class PlateReader:
     def __init__(self):
-        self.reader       = None
-        self.plate_model  = None
+        self.reader      = None
+        self.plate_model = None
         self._load_ocr()
         self._load_plate_model()
 
@@ -15,7 +14,7 @@ class PlateReader:
         try:
             import easyocr
             self.reader = easyocr.Reader(["en"], gpu=False)
-            print("✅ EasyOCR (plaka okuma) yüklendi!")
+            print(" EasyOCR (plaka okuma) yüklendi!")
         except Exception as e:
             print(f"⚠️ EasyOCR yüklenemedi: {e}")
 
@@ -23,7 +22,7 @@ class PlateReader:
         model_path = "runs/detect/models/plate_detector/weights/best.pt"
         try:
             self.plate_model = YOLO(model_path)
-            print("✅ Plaka tespit modeli yüklendi!")
+            print(" Plaka tespit modeli yüklendi!")
         except Exception as e:
             print(f"⚠️ Plaka tespit modeli yüklenemedi: {e}")
 
@@ -43,14 +42,12 @@ class PlateReader:
             if vehicle_crop.size == 0:
                 return None
 
-            # Plaka tespit modeli varsa kullan
             if self.plate_model is not None:
                 plate_bbox = self._detect_plate(vehicle_crop)
                 if plate_bbox:
                     px1, py1, px2, py2 = plate_bbox
                     plate_img = vehicle_crop[py1:py2, px1:px2]
                 else:
-                    # Model bulamazsa alt %30'u al
                     plate_y1 = int(vehicle_crop.shape[0] * 0.70)
                     plate_img = vehicle_crop[plate_y1:, :]
             else:
@@ -60,15 +57,21 @@ class PlateReader:
             if plate_img.size == 0:
                 return None
 
-            # Büyüt ve OCR uygula
+            
             plate_img_big = cv2.resize(plate_img, None, fx=3, fy=3)
-            results = self.reader.readtext(plate_img_big, detail=0)
+
+            
+            results = self.reader.readtext(
+                plate_img_big,
+                detail=0,
+                allowlist='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789- '
+            )
 
             if not results:
                 return None
 
             text = " ".join(results).upper().strip()
-            text = re.sub(r'[^A-Z0-9 ]', '', text).strip()
+            text = re.sub(r'[^A-Z0-9 -]', '', text).strip()
 
             if len(text) >= 4:
                 return text
@@ -79,7 +82,6 @@ class PlateReader:
             return None
 
     def _detect_plate(self, vehicle_crop):
-        """Araç içinde plaka bölgesini tespit et."""
         try:
             results = self.plate_model(vehicle_crop, verbose=False, conf=0.5)
             boxes   = results[0].boxes
@@ -87,7 +89,6 @@ class PlateReader:
             if boxes is None:
                 return None
 
-            # 'np' sınıfı = index 4
             for box in boxes:
                 cls_id = int(box.cls[0])
                 if cls_id == 4:  # np = number plate

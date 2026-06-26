@@ -1,4 +1,4 @@
-# test_plate.py
+# test_plate_output.py
 import cv2
 from plate_reader import PlateReader
 from ultralytics import YOLO
@@ -17,10 +17,27 @@ for box in boxes:
         x1, y1, x2, y2 = map(int, box.xyxy[0])
         conf = float(box.conf[0])
 
-        
+        # Plaka tespit et
         vehicle_crop = frame[y1:y2, x1:x2]
-        plate_bbox = reader._detect_plate(vehicle_crop)
-        print(f"🔍 Plaka bbox tespit: {plate_bbox}")
+        plate_bbox   = reader._detect_plate(vehicle_crop)
+        plate_text   = reader.read_plate(frame, [x1, y1, x2, y2])
 
-        plate = reader.read_plate(frame, [x1, y1, x2, y2])
-        print(f"🚗 Araç ({conf:.2f}) → Plaka: {plate}")
+        # Araç bbox çiz
+        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+        cv2.putText(frame, f"Arac {conf:.2f}", (x1, y1-10),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+
+        # Plaka bbox çiz
+        if plate_bbox:
+            px1, py1, px2, py2 = plate_bbox
+            # Koordinatları tam frame'e çevir
+            px1 += x1; px2 += x1
+            py1 += y1; py2 += y1
+            cv2.rectangle(frame, (px1, py1), (px2, py2), (0, 0, 255), 2)
+            cv2.putText(frame, f"Plaka: {plate_text}", (px1, py1-10),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+
+        print(f" Araç ({conf:.2f}) → Plaka: {plate_text}")
+
+cv2.imwrite("outputs/plate_detection_result.jpg", frame)
+print("outputs/plate_detection_result.jpg kaydedildi!")
